@@ -1,0 +1,257 @@
+---
+title: "Peer-graded Assignment: Course Project 2. Health and Economic effects of Weather events in the United States"
+output:  
+   html_document: 
+    keep_md: yes 
+---
+
+##Synopsis
+We analyzed natural events datafrom he U.S. National Oceanic and Atmospheric Administration’s (NOAA) storm database.
+This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+Key questions to address:
+
+ 1. Across the United States, which types of events are most harmful with respect to population health?
+
+ 2. Across the United States, which types of events have the greatest economic consequences?
+ 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r , echo=FALSE,results='hide'}
+setwd("E:/R/Reproducible Research/4/Assignment")
+rm(list=ls(all=TRUE)) 
+library(dplyr)
+library(RColorBrewer)
+library(ggplot2)
+library(lubridate)
+library(rmarkdown)
+library(knitr)
+library(R.utils)
+library(plyr); library(dplyr)
+library(plotly)
+```
+##Data Processing
+We load the data from the course web site.  
+```{r , echo=TRUE}
+if(!file.exists("E:/R/Reproducible Research/4/Assignment")){dir.create("E:/R/Reproducible Research/4/Assignment")}
+url<-"https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+download.file(url, "E:/R/Reproducible Research/4/Assignment/Data_Assessment.csv.bz2",method="auto") 
+bunzip2("Data_Assessment.csv.bz2", "Data_Assessment.csv", remove = FALSE, skip = TRUE)
+dataset <- read.csv("Data_Assessment.csv",header = TRUE, sep = ",")
+
+names(dataset)
+## we keep the col that we need for the analisys and we make a new variable with only that. 
+
+stormdata <- dataset[c("EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")]
+head(stormdata)
+##some of the data at EVTYPE is in lowercase, we change it to all capital
+stormdata$EVTYPE = toupper(stormdata$EVTYPE)
+```
+Lets see  what types of events do we have. 
+```{r , echo=TRUE}
+head(names(table(stormdata$EVTYPE)))
+```
+So we going to group the EVTYPE variable and create a new one, puting togethe names with the the same meaning. For example, in the class "RAIN" we going to put the the expressions: "RAIN","HEAVY RAIN", "FLOOD","FLASH FLOOD", "URBAN/SML STREAM FLD", "FLASH FLOODING", "FLOOD/FLASH FLOOD", etc. According to cookbooê.
+```{r , echo=TRUE}
+stormdata <- stormdata %>%
+  mutate(EVTYPEGRP = 
+   ifelse(grepl("HAIL", EVTYPE), "HAIL",
+    ifelse(grepl("LIGHTNING|LIGHTING|LIGNTNING", EVTYPE), "LIGHTNING",
+     ifelse(grepl("RAIN|FLOOD|WET|FLD|FLOODING", EVTYPE), "RAIN",
+      ifelse(grepl("SNOW|WINTER|WINTRY|BLIZZARD|SLEET|COLD|ICE|FREEZE|AVALANCHE|ICY|WINDCHILL|FROST|MIXED+PRECIPITATION|FREEZING", EVTYPE), "WINTER",
+       ifelse(grepl("TORNADO|TORNDAO|TYPHOON|FUNNEL|WATERSPOUT|WATERSPOUTS|HURRICANE|WAYTERSPOUT|WATER SPOUT", EVTYPE), "TORNADO",
+        ifelse(grepl("WIND|WINDS|WINDSS", EVTYPE), "WINDS",
+         ifelse(grepl("STORM|THUNDER|TSTM|TROPICAL +STORM|DUST+DEVIL|TROPICAL DEPRESSION", EVTYPE), "STORM",
+          ifelse(grepl("FIRE|WILDFIRE", EVTYPE), "FIRE",
+           ifelse(grepl("FOG|VISIBILITY|DARK|DUST|GLAZE", EVTYPE), "FOG",
+            ifelse(grepl("WAVE|SURF|SURGE|TIDE|TSUNAMI|CURRENT|SWELL", EVTYPE), "WAVE",
+             ifelse(grepl("HEAT|HIGH +TEMP|RECORD +TEMP|WARM|DRY", EVTYPE), "HEAT",
+              ifelse(grepl("VOLCAN", EVTYPE), "VOLCANO",
+               ifelse(grepl("DROUGHT", EVTYPE), "DROUGHT",
+               "OTHER")))))))))))))
+
+  )
+
+names(table(stormdata$EVTYPEGRP))
+```
+If we want to see what kind of data went in the "VOLCANO" class. 
+```{r , echo=TRUE}
+names(table(stormdata[which(stormdata$EVTYPEGRP=="VOLCANO") , ]$EVTYPE))
+```
+Or we can see what kind of data fall into the class "OTHER", and mabe add in the if some staf if we found something we want to correct. 
+```{r , echo=TRUE,results='hide'}
+head(names(table(stormdata[which(stormdata$EVTYPEGRP=="OTHER") , ]$EVTYPE)))
+```
+<br/>
+
+We fix our data set (for now we going to keep it that way), so know we want to find which types of events are most harmful with respect to population health?
+
+First we going to look at the fatalities variable.So we summarize data. 
+```{r , echo=TRUE}
+stormdatasum<-aggregate(cbind(FATALITIES,INJURIES) ~ EVTYPEGRP, stormdata, sum)
+stormdatasum
+```
+As we can see first is the tornado (by far).  
+```{r , echo=TRUE}
+stormdatasum[which.max(stormdatasum$FATALITIES),]$EVTYPEGRP
+```
+ 
+And then we going to look at the injuries. As we can see first is the tornado (by far). 
+```{r , echo=TRUE}
+stormdatasum[which.max(stormdatasum$INJURIES),]$EVTYPEGRP
+```
+
+Now lets see what the data for the types of events have the greatest economic consequences, looks like.
+ 
+```{r , echo=TRUE}
+
+summary(stormdata$PROPDMGEXP)
+summary(stormdata$CROPDMGEXP)
+
+```
+According to page 12 from the cookbook, there are several conventions to easy figure reading and calculations: “K” stands for thousands, “M” for millions and “B” for billions. We need to standarize the upper and lower case from those. First, we transform exponential values to actual numbers.
+
+```{r , echo=TRUE}
+stormdata <- stormdata %>%
+  mutate(PROPDMGEXP2 = 
+   ifelse(grepl("- | ? | +", PROPDMGEXP), "0",
+    ifelse(grepl("0", PROPDMGEXP), "1",
+     ifelse(grepl("1", PROPDMGEXP), "10",
+      ifelse(grepl("2|H|h", PROPDMGEXP), "100",
+       ifelse(grepl("3|K", PROPDMGEXP), "1000",
+        ifelse(grepl("4", PROPDMGEXP), "10000",
+         ifelse(grepl("5", PROPDMGEXP), "100000",
+          ifelse(grepl("6|M|m", PROPDMGEXP), "1000000",
+           ifelse(grepl("7", PROPDMGEXP), "10000000",
+            ifelse(grepl("8", PROPDMGEXP), "100000000",
+             ifelse(grepl("B", PROPDMGEXP), "1000000000",
+               "0")))))))))))
+
+  )
+stormdata$PROPDMGEXP2<-as.numeric(stormdata$PROPDMGEXP2)
+##now we make a new col named PROPDMGTOTAL how have the total PROPDMG*PROPDMGEXP2 (as we can see at the cookbook)
+stormdata$PROPDMGTOTAL <- (stormdata$PROPDMG * stormdata$PROPDMGEXP2)
+```
+<br/>
+We convert property damage units and now we going to do the same for crop damage units. 
+
+```{r , echo=TRUE}
+stormdata <- stormdata %>%
+  mutate(CROPDMGEXP2 = 
+   ifelse(grepl("- | ? | +", CROPDMGEXP), "0",
+    ifelse(grepl("0", CROPDMGEXP), "1",
+     ifelse(grepl("1", CROPDMGEXP), "10",
+      ifelse(grepl("2|H|h", CROPDMGEXP), "100",
+       ifelse(grepl("3|K", CROPDMGEXP), "1000",
+        ifelse(grepl("4", CROPDMGEXP), "10000",
+         ifelse(grepl("5", CROPDMGEXP), "100000",
+          ifelse(grepl("6|M|m", CROPDMGEXP), "1000000",
+           ifelse(grepl("7", CROPDMGEXP), "10000000",
+            ifelse(grepl("8", CROPDMGEXP), "100000000",
+             ifelse(grepl("B", CROPDMGEXP), "1000000000",
+               "0")))))))))))
+
+  )
+stormdata$CROPDMGEXP2<-as.numeric(stormdata$CROPDMGEXP2)
+##now we make a new col named CROPDMGTOTAL how have the total CROPDMG*CROPDMGEXP2 (as we can see at the cookbook)
+stormdata$CROPDMGTOTAL <- (stormdata$CROPDMG * stormdata$CROPDMGEXP2)
+```
+<br/>
+
+So now we can calculate the total economic damage. 
+
+```{r , echo=TRUE}
+## we summarize the data
+stormeconomicsum<-aggregate(cbind(PROPDMGTOTAL,CROPDMGTOTAL) ~ EVTYPEGRP, stormdata, sum)
+##and make a new col named SUM=PROPDMGTOTAL+CROPDMGTOTAL
+stormeconomicsum <- mutate(stormeconomicsum,SUM=PROPDMGTOTAL+CROPDMGTOTAL)
+stormeconomicsum
+```
+First we going to look at the property variable. 
+```{r , echo=TRUE}
+stormeconomicsum[which.max(stormeconomicsum$PROPDMGTOTAL),]$EVTYPEGRP
+```
+As we can see first is the rain and then we going to look at the crop.
+
+```{r , echo=TRUE}
+stormeconomicsum[which.max(stormeconomicsum$CROPDMGTOTA),]$EVTYPEGRP
+```
+As we can see first is the drought. 
+
+<br/>
+
+**One note, as we see the total for the "OTHER" variable, in both groups the fatalities and injuries and the property and crop, is very small in contrast with the other numbers. So we know we didn't loss any sirius data in the last    class.**  
+
+
+##Results
+
+<br/>
+Now lets look at the result of our analisys.
+
+###1. Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+The following graph is the sum cost of the fatalities and injuries, together. 
+
+```{r , echo=TRUE}
+stormdatasum <- mutate(stormdatasum,SUM=FATALITIES+INJURIES)
+ggplot(stormdatasum, aes(EVTYPEGRP,SUM, fill=SUM))+
+  geom_bar(stat = "identity",position = position_stack(reverse = TRUE))+
+  xlab("Event Type")+ ylab("Number of Fatalities+Injuries")+
+  ggtitle("Total SUM By Event Type")+
+  theme(axis.text.x = element_text(angle=90)) +
+  expand_limits(y=c(0,10000))
+```
+<br/>
+In the following graph we can see the sum cost of the fatalities and injuries and which did what. 
+
+```{r , echo=TRUE}
+plot_ly(stormdatasum, x= ~EVTYPEGRP, y= ~FATALITIES, type = 'bar', name = 'Fatal', width = 800, height = 500) %>%
+        add_trace(y= ~INJURIES, name='Injury') %>%
+        layout(title = "Top 10 events most hurtful to public health", yaxis = list(title = 'Number'), xaxis = list(title = 'Eventtype', tickangle = -45), barmode = 'stack', margin = list(b = 150))
+
+```
+
+<br/>
+
+As we can see the 5 events who are most harmful (with respect to population health), are:
+
+ 1. TORNADO (by far)
+ 2. WINDS
+ 3. HEAT
+ 4. RAIN
+ 5. WINTER
+ 
+ <br/>
+ 
+###2. Across the United States, which types of events have the greatest economic consequences?
+
+The following graph is the sum cost of the property and crop, together.
+
+```{r , echo=TRUE}
+ggplot(stormeconomicsum, aes(EVTYPEGRP,SUM, fill=SUM))+
+geom_bar(stat = "identity",position = position_stack(reverse = TRUE))+
+xlab("Event Type")+ ylab("Number of Economic damages")+
+ggtitle("Total SUM By Event Type")+
+theme(axis.text.x = element_text(angle=90)) +
+expand_limits(y=c(0,10^11))
+```
+
+<br/>
+In the following graph we can see the sum cost of the property and crop and which did what. 
+```{r , echo=TRUE}
+plot_ly(stormeconomicsum, x= ~EVTYPEGRP, y= ~PROPDMGTOTAL, type = 'bar', name = 'Value property damage', width = 800, height = 500) %>%
+        add_trace(y= ~CROPDMGTOTAL, name='Value crop damage') %>%
+        layout(title = "Top 10 events highest economic damage", yaxis = list(title = 'Value of damage'), xaxis = list(title = 'Eventtype', tickangle = -45), barmode = 'stack', margin = list(b = 150))
+```
+<br/>
+
+As we can see the 5 events who are most damaging (economic consequences), are:
+
+ 1. RAIN
+ 2. TORNADO
+ 3. STORM
+ 4. WINTER
+ 5. HAIL
+ 
+  <br/>
