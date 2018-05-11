@@ -1,5 +1,5 @@
 # Reproducible-Research-Course-PeerAssessmen-2
-### Download and open the html file to see the plots, or go to http://rpubs.com/opalh/314798 . 
+### To see the notebook, download and open the html file to see the plots or go to http://rpubs.com/opalh/314798 . 
 
 ## Introduction
 Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
